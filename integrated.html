@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>STC 통합분석 — OEE × 금형수리</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+<style>
+:root{--bg:#0d1117;--panel:#161b22;--panel2:#1c2330;--line:#2a3140;--ink:#e6edf3;--sub:#8b98a9;--dim:#5c6774;--accent:#00d3a7;--accent2:#3fb7ff;--warn:#ffb02e;--bad:#ff5d5d;--purple:#a78bfa;--grid:#232a36;--mono:'SF Mono',ui-monospace,'Cascadia Code','Consolas',monospace;}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--ink);font-family:'Pretendard','Segoe UI',-apple-system,'Noto Sans Thai',sans-serif;line-height:1.5;padding-bottom:60px}
+.wrap{max-width:1340px;margin:0 auto;padding:0 20px}
+header{border-bottom:1px solid var(--line);background:linear-gradient(180deg,#11161f,transparent);position:sticky;top:0;z-index:50;backdrop-filter:blur(8px)}
+.hbar{display:flex;align-items:center;justify-content:space-between;padding:14px 20px;max-width:1340px;margin:0 auto;gap:14px;flex-wrap:wrap}
+.brand{display:flex;align-items:baseline;gap:12px}
+.sigma{font-family:var(--mono);font-size:24px;font-weight:700;color:var(--accent);letter-spacing:-1px;white-space:nowrap}
+.sigma b{color:var(--accent2)}
+.brand h1{font-size:15px;font-weight:600}
+.brand .sub{font-size:11px;color:var(--dim);font-family:var(--mono)}
+.ctrl{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.daterange{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.daterange input[type=date]{background:var(--panel2);color:var(--ink);border:1px solid var(--line);border-radius:7px;padding:6px 9px;font-size:12px;font-family:var(--mono);color-scheme:dark}
+.daterange .tilde{color:var(--dim)}
+.daterange .quick{display:flex;gap:3px;margin-left:2px}
+.daterange .quick button{background:var(--panel2);color:var(--sub);border:1px solid var(--line);border-radius:6px;padding:6px 9px;font-size:11px;font-family:var(--mono);cursor:pointer}
+.daterange .quick button:hover{color:var(--accent);border-color:var(--accent)}
+.period{font-family:var(--mono);font-size:11px;color:var(--sub);text-align:right}
+.btn{background:var(--accent);color:#04110d;border:none;padding:8px 14px;border-radius:8px;font-size:12.5px;font-weight:600;cursor:pointer;font-family:inherit}
+.btn:hover{filter:brightness(1.1)}.btn:disabled{opacity:.5;cursor:default}
+.btn.ghost{background:transparent;border:1px solid var(--line);color:var(--sub)}
+.lang{display:flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.lang button{background:var(--panel2);color:var(--sub);border:none;padding:7px 11px;font-size:11px;cursor:pointer;font-family:var(--mono)}
+.lang button.on{background:var(--accent);color:#04110d;font-weight:700}
+.status{font-size:11px;font-family:var(--mono);color:var(--dim)}
+.status.ok{color:var(--accent)}.status.err{color:var(--bad)}.status.load{color:var(--warn)}
+.srcbadge{display:inline-flex;gap:4px;align-items:center;font-size:10px;font-family:var(--mono);padding:2px 7px;border-radius:5px;border:1px solid var(--line)}
+.srcbadge.on{color:var(--accent);border-color:var(--accent)}
+.srcbadge.off{color:var(--bad);border-color:var(--bad)}
+.tabs{display:flex;gap:2px;border-bottom:1px solid var(--line);margin-top:8px;overflow-x:auto}
+.tab{padding:11px 14px;font-size:12.5px;color:var(--sub);cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap;font-weight:500;transition:.15s}
+.tab:hover{color:var(--ink)}.tab.on{color:var(--accent);border-color:var(--accent)}
+.tab .th{font-size:10px;color:var(--dim);display:block;font-weight:400}
+section{display:none;padding-top:24px}
+section.on{display:block;animation:fade .3s}
+@keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:14px;margin-bottom:22px}
+.kpi{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:15px 17px;position:relative;overflow:hidden}
+.kpi::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--accent)}
+.kpi.a2::before{background:var(--accent2)}.kpi.w::before{background:var(--warn)}.kpi.b::before{background:var(--bad)}.kpi.p::before{background:var(--purple)}
+.kpi .lab{font-size:10.5px;color:var(--sub);text-transform:uppercase;letter-spacing:.4px;font-family:var(--mono)}
+.kpi .val{font-size:25px;font-weight:700;margin:5px 0 2px;font-family:var(--mono);letter-spacing:-1px}
+.kpi .unit{font-size:12px;color:var(--dim);font-weight:400}
+.grid{display:grid;gap:16px}.g2{grid-template-columns:1fr 1fr}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px}
+.panel h3{font-size:13px;font-weight:600;margin-bottom:3px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.panel h3 .tag{font-size:10px;color:var(--dim);font-family:var(--mono);font-weight:400}
+.panel .desc{font-size:11.5px;color:var(--dim);margin-bottom:14px}
+.chartbox{position:relative;height:300px}.chartbox.tall{height:360px}
+table{width:100%;border-collapse:collapse;font-size:12.5px}
+th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--grid)}
+th{color:var(--sub);font-weight:500;font-size:11px;letter-spacing:.4px;font-family:var(--mono)}
+td{color:var(--ink)}td.num,th.num{text-align:right;font-family:var(--mono)}
+tr:hover td{background:var(--panel2)}
+.bar-cell{position:relative}
+.bar-cell .bar{position:absolute;left:0;top:0;bottom:0;background:linear-gradient(90deg,rgba(0,211,167,.18),rgba(0,211,167,.04));z-index:0;border-radius:3px}
+.bar-cell span{position:relative;z-index:1}
+.rank{color:var(--dim);font-family:var(--mono);font-size:11px}
+.chip{display:inline-block;padding:1px 7px;border-radius:4px;font-size:11px;font-family:var(--mono)}
+.chip.hi{background:rgba(255,93,93,.12);color:var(--bad)}.chip.mid{background:rgba(255,176,46,.12);color:var(--warn)}
+.chip.lo{background:rgba(0,211,167,.12);color:var(--accent)}.chip.q{background:rgba(63,183,255,.12);color:var(--accent2)}
+.insight{background:linear-gradient(135deg,rgba(0,211,167,.06),rgba(63,183,255,.04));border:1px solid var(--line);border-left:3px solid var(--accent);border-radius:8px;padding:14px 16px;margin-bottom:16px;font-size:13px;color:var(--sub)}
+.insight b{color:var(--ink)}
+.insight .h{font-size:11px;color:var(--accent);font-family:var(--mono);letter-spacing:.5px;margin-bottom:6px}
+.foot{text-align:center;color:var(--dim);font-size:11px;font-family:var(--mono);margin-top:30px;padding-top:20px;border-top:1px solid var(--line)}
+.loading{text-align:center;padding:80px 20px;color:var(--sub)}
+.spin{width:36px;height:36px;border:3px solid var(--line);border-top-color:var(--accent);border-radius:50%;margin:0 auto 16px;animation:sp 1s linear infinite}
+@keyframes sp{to{transform:rotate(360deg)}}
+.empty{color:var(--dim);padding:24px;text-align:center;font-size:12.5px}
+.quad{position:relative;height:440px;border:1px solid var(--line);border-radius:10px;background:var(--panel2);margin:10px 0 28px}
+.quad .qlabel{position:absolute;font-size:11px;font-family:var(--mono);padding:6px 8px}
+.quad .midline{position:absolute;background:var(--line)}
+.quad .axis-x{position:absolute;bottom:-22px;width:100%;text-align:center;font-size:11px;color:var(--sub);font-family:var(--mono)}
+.quad .axis-y{position:absolute;left:-8px;top:50%;transform:rotate(-90deg) translateX(50%);transform-origin:left;font-size:11px;color:var(--sub);font-family:var(--mono);white-space:nowrap}
+.quad .dot{position:absolute;border-radius:50%;transform:translate(-50%,50%);cursor:pointer;border:1px solid rgba(255,255,255,.15)}
+.quad .dot:hover{outline:2px solid var(--ink);z-index:5}
+.quad .dot .lb{position:absolute;left:50%;top:-15px;transform:translateX(-50%);font-size:9px;font-family:var(--mono);color:var(--sub);white-space:nowrap;pointer-events:none}
+.legend-row{display:flex;gap:16px;flex-wrap:wrap;font-size:11px;color:var(--sub);margin-top:10px}
+.legend-row .li{display:flex;align-items:center;gap:6px}
+.legend-row .dt{width:10px;height:10px;border-radius:50%}
+@media(max-width:860px){.g2{grid-template-columns:1fr}.period{text-align:left}}
+</style>
+</head>
+<body>
+<header>
+  <div class="hbar">
+    <div class="brand">
+      <div class="sigma">OEE<b>&times;</b><span data-i18n="brand.mold">금형</span></div>
+      <div><h1 data-i18n="brand.title">STC 통합분석 대시보드</h1><div class="sub">OEE (A&middot;P&middot;Q) &times; MOLD REPAIR &middot; LIVE</div></div>
+    </div>
+    <div class="ctrl">
+      <div class="lang"><button id="lk" class="on" onclick="setLang('ko')">한</button><button id="lt" onclick="setLang('th')">ไทย</button></div>
+      <div class="daterange">
+        <input type="date" id="d-from" onchange="applyRange()">
+        <span class="tilde">~</span>
+        <input type="date" id="d-to" onchange="applyRange()">
+        <div class="quick"><button onclick="quickRange(0)" data-i18n="q.all">전체</button><button onclick="quickRange(1)">1M</button><button onclick="quickRange(3)">3M</button><button onclick="quickRange(6)">6M</button></div>
+      </div>
+      <button class="btn" id="reload" onclick="loadAll()" data-i18n="btn.reload">↻ 불러오기</button>
+      <button class="btn ghost" id="autobtn" onclick="toggleAuto()" data-i18n="btn.autoOff">자동갱신 OFF</button>
+      <div class="period"><span class="status" id="status">-</span><br><span id="src-mold" class="srcbadge">MOLD</span> <span id="src-a" class="srcbadge">A</span> <span id="src-q" class="srcbadge">Q</span></div>
+    </div>
+  </div>
+  <div class="wrap"><div class="tabs">
+    <div class="tab on" data-t="ov"><span data-i18n="tab.ov">종합요약</span> <span class="th">Overview</span></div>
+    <div class="tab" data-t="q1"><span data-i18n="tab.q1">가동률손실</span> <span class="th">1&middot;Availability</span></div>
+    <div class="tab" data-t="q2"><span data-i18n="tab.q2">수리↔불량</span> <span class="th">2&middot;Quality</span></div>
+    <div class="tab" data-t="q3"><span data-i18n="tab.q3">설비총손실</span> <span class="th">3&middot;Total Loss</span></div>
+    <div class="tab" data-t="q4"><span data-i18n="tab.q4">TBM우선순위</span> <span class="th">4&middot;Priority</span></div>
+    <div class="tab" data-t="q5"><span data-i18n="tab.q5">정비효과</span> <span class="th">5&middot;Effect</span></div>
+    <div class="tab" data-t="q6"><span data-i18n="tab.q6">개선매트릭스</span> <span class="th">6&middot;Quadrant</span></div>
+  </div></div>
+</header>
+
+<div class="wrap">
+<div id="loading" class="loading"><div class="spin"></div><span data-i18n="loading">두 데이터를 병합하는 중…</span></div>
+<div id="app" style="display:none">
+
+<section id="ov" class="on">
+  <div class="insight" id="ov-insight"></div>
+  <div class="kpis" id="ov-kpi"></div>
+  <div class="grid g2">
+    <div class="panel"><h3><span data-i18n="ov.combo">설비별 통합 손실 상위</span> <span class="tag">OEE↓ + 수리↑</span></h3><div class="desc" data-i18n="ov.comboD">OEE가 낮으면서 수리도 많은 설비 = 최우선.</div><div class="chartbox tall"><canvas id="c-ovcombo"></canvas></div></div>
+    <div class="panel"><h3><span data-i18n="ov.trend">월별 OEE vs 수리 다운타임</span> <span class="tag">Correlation</span></h3><div class="desc" data-i18n="ov.trendD">다운타임이 늘면 OEE가 떨어지는 역상관.</div><div class="chartbox tall"><canvas id="c-ovtrend"></canvas></div></div>
+  </div>
+</section>
+
+<section id="q1">
+  <div class="insight"><div class="h">① AVAILABILITY LOSS</div><span data-i18n="q1.ins">가동률(A) 저하가 금형 수리 다운타임에서 얼마나 왔는지 분리한다.</span></div>
+  <div class="panel"><h3><span data-i18n="q1.chart">설비별 가동률 vs 수리 다운타임</span> <span class="tag">A% vs Repair-min</span></h3><div class="desc" data-i18n="q1.chartD">막대=수리 다운타임(분), 선=가동률(%).</div><div class="chartbox tall"><canvas id="c-q1"></canvas></div></div>
+  <div class="panel" style="margin-top:16px"><h3><span data-i18n="q1.tbl">수리 다운타임의 가동률 잠식률</span> <span class="tag">Downtime Share</span></h3><div class="desc" data-i18n="q1.tblD">계획시간 중 금형수리로 손실된 비율.</div><div id="t-q1"></div></div>
+</section>
+
+<section id="q2">
+  <div class="insight"><div class="h">② QUALITY LINK</div><span data-i18n="q2.ins">수리가 많은 설비에서 불량(PPM)도 높은지 연결한다.</span></div>
+  <div class="grid g2">
+    <div class="panel"><h3><span data-i18n="q2.scatter">설비별 수리건수 vs 불량률</span> <span class="tag">Repair vs PPM</span></h3><div class="desc" data-i18n="q2.scatterD">우상향이면 "고장→불량" 구조.</div><div class="chartbox tall"><canvas id="c-q2scatter"></canvas></div></div>
+    <div class="panel"><h3><span data-i18n="q2.trend">월별 코어핀 수리 vs 불량</span> <span class="tag">Type × Defect</span></h3><div class="desc" data-i18n="q2.trendD">수리 급증과 불량 급증이 겹치는지.</div><div class="chartbox tall"><canvas id="c-q2trend"></canvas></div></div>
+  </div>
+  <div class="panel" style="margin-top:16px"><h3><span data-i18n="q2.tbl">수리·불량 동반 설비</span> <span class="tag">High Both</span></h3><div class="desc" data-i18n="q2.tblD">둘 다 높은 설비 = 금형-품질 연쇄 의심.</div><div id="t-q2"></div></div>
+</section>
+
+<section id="q3">
+  <div class="insight"><div class="h">③ TOTAL LOSS</div><span data-i18n="q3.ins">한 설비의 진짜 손실 = OEE 손실 + 수리비용 + 다운타임.</span></div>
+  <div class="panel"><h3><span data-i18n="q3.tbl">설비별 통합 손실 랭킹</span> <span class="tag">Combined Loss</span></h3><div class="desc" data-i18n="q3.tblD">OEE손실률·수리비용·다운타임을 정규화해 합산.</div><div id="t-q3"></div></div>
+</section>
+
+<section id="q4">
+  <div class="insight"><div class="h">④ TBM PRIORITY</div><span data-i18n="q4.ins">금형 순위와 OEE 순위가 일치하면 최우선, 엇갈리면 재조사.</span></div>
+  <div class="panel"><h3><span data-i18n="q4.tbl">설비 우선순위 교차표</span> <span class="tag">Repair × OEE rank</span></h3><div class="desc" data-i18n="q4.tblD">두 순위가 모두 나쁜 설비가 즉시 개선 대상.</div><div id="t-q4"></div></div>
+</section>
+
+<section id="q5">
+  <div class="insight"><div class="h">⑤ MAINTENANCE EFFECT</div><span data-i18n="q5.ins">정비를 늘린 달에 품질(Q)이 실제로 올랐는가.</span></div>
+  <div class="panel"><h3><span data-i18n="q5.chart">월별 정비량 vs 품질(Q)</span> <span class="tag">Repair vs Quality</span></h3><div class="desc" data-i18n="q5.chartD">막대=수리건수, 선=품질(Q)%.</div><div class="chartbox tall"><canvas id="c-q5"></canvas></div></div>
+  <div class="panel" style="margin-top:16px"><div id="q5-note" class="desc" style="font-size:12.5px"></div></div>
+</section>
+
+<section id="q6">
+  <div class="insight"><div class="h">⑥ QUADRANT</div><span data-i18n="q6.ins">각 설비를 수리량(X) × 불량(Y) 4분면에 배치한다.</span></div>
+  <div class="panel">
+    <h3><span data-i18n="q6.chart">설비 4분면 매트릭스</span> <span class="tag">Repair × Defect</span></h3>
+    <div class="desc" data-i18n="q6.chartD">가로=수리건수, 세로=불량PPM, 원 크기=수리비용.</div>
+    <div id="quad" class="quad"></div>
+    <div class="legend-row">
+      <div class="li"><span class="dt" style="background:var(--bad)"></span><span data-i18n="q6.l1">① 즉시개선</span></div>
+      <div class="li"><span class="dt" style="background:var(--warn)"></span><span data-i18n="q6.l2">② 정비표준화</span></div>
+      <div class="li"><span class="dt" style="background:var(--accent2)"></span><span data-i18n="q6.l4">④ 공정조정</span></div>
+      <div class="li"><span class="dt" style="background:var(--accent)"></span><span data-i18n="q6.l3">③ 안정</span></div>
+    </div>
+  </div>
+</section>
+
+<div class="foot">STC Co., Ltd. · OEE × MOLD REPAIR · Google Sheets Live</div>
+</div></div>
+
+<script>
+const MOLD_CSV="https://docs.google.com/spreadsheets/d/e/2PACX-1vRali1J2hjdX44d_UTddt0YfIHsZTwyazccpgjlU2ixHdkt4_ChghkZ09gzHHN3epIOK_8mTRxKegIA/pub?output=csv";
+const OEE_PUB="2PACX-1vQ6U8gG0Mr3oJ-5XOOzr7Eh_oZGc-BGHFG0n1__eor4Zc8aJaMuf01NXCAHJECH6U8aUvtnQGLKD5-_";
+const A_URL=`https://docs.google.com/spreadsheets/d/e/${OEE_PUB}/pub?gid=345197688&single=true&output=csv`;
+const Q_URL=`https://docs.google.com/spreadsheets/d/e/${OEE_PUB}/pub?gid=116850424&single=true&output=csv`;
+
+const I18N={
+ ko:{'brand.mold':'금형','brand.title':'STC 통합분석 대시보드 — 생산 × 정비 6시그마','btn.reload':'↻ 불러오기','btn.autoOff':'자동갱신 OFF','btn.autoOn':'자동갱신 ON (5분)','q.all':'전체','loading':'두 데이터를 병합하는 중…',
+  'tab.ov':'종합요약','tab.q1':'가동률손실','tab.q2':'수리↔불량','tab.q3':'설비총손실','tab.q4':'TBM우선순위','tab.q5':'정비효과','tab.q6':'개선매트릭스',
+  'ov.combo':'설비별 통합 손실 상위','ov.comboD':'OEE가 낮으면서 수리도 많은 설비 = 최우선.','ov.trend':'월별 OEE vs 수리 다운타임','ov.trendD':'다운타임이 늘면 OEE가 떨어지는 역상관.',
+  'q1.ins':'가동률(A) 저하가 금형 수리 다운타임에서 얼마나 왔는지 분리한다.','q1.chart':'설비별 가동률 vs 수리 다운타임','q1.chartD':'막대=수리 다운타임(분), 선=가동률(%).','q1.tbl':'수리 다운타임의 가동률 잠식률','q1.tblD':'계획시간 중 금형수리로 손실된 비율.',
+  'q2.ins':'수리가 많은 설비에서 불량(PPM)도 높은지 연결한다.','q2.scatter':'설비별 수리건수 vs 불량률','q2.scatterD':'우상향이면 "고장→불량" 구조.','q2.trend':'월별 코어핀 수리 vs 불량','q2.trendD':'수리 급증과 불량 급증이 겹치는지.','q2.tbl':'수리·불량 동반 설비','q2.tblD':'둘 다 높은 설비 = 금형-품질 연쇄 의심.',
+  'q3.ins':'한 설비의 진짜 손실 = OEE 손실 + 수리비용 + 다운타임.','q3.tbl':'설비별 통합 손실 랭킹','q3.tblD':'OEE손실률·수리비용·다운타임을 정규화해 합산.',
+  'q4.ins':'금형 순위와 OEE 순위가 일치하면 최우선, 엇갈리면 재조사.','q4.tbl':'설비 우선순위 교차표','q4.tblD':'두 순위가 모두 나쁜 설비가 즉시 개선 대상.',
+  'q5.ins':'정비를 늘린 달에 품질(Q)이 실제로 올랐는가.','q5.chart':'월별 정비량 vs 품질(Q)','q5.chartD':'막대=수리건수, 선=품질(Q)%.',
+  'q6.ins':'각 설비를 수리량(X) × 불량(Y) 4분면에 배치한다.','q6.chart':'설비 4분면 매트릭스','q6.chartD':'가로=수리건수, 세로=불량PPM, 원 크기=수리비용.','q6.l1':'① 즉시개선','q6.l2':'② 정비표준화','q6.l3':'③ 안정','q6.l4':'④ 공정조정',
+  'kpi.eq':'설비 수','kpi.repair':'총 수리건수','kpi.dt':'총 다운타임','kpi.cost':'총 수리비용','kpi.a':'평균 가동률 A','kpi.q':'평균 품질 Q','u.eq':'대','u.cnt':'건','u.hr':'시간',
+  'noOEE':'이 분석은 OEE 데이터가 필요합니다. OEE 시트를 웹에 게시(CSV)하면 활성화됩니다.','noMerge':'병합 가능한 설비가 없습니다.'},
+ th:{'brand.mold':'แม่พิมพ์','brand.title':'แดชบอร์ดวิเคราะห์รวม STC — การผลิต × การซ่อมบำรุง 6ซิกมา','btn.reload':'↻ โหลดข้อมูล','btn.autoOff':'อัปเดตอัตโนมัติ ปิด','btn.autoOn':'อัปเดตอัตโนมัติ เปิด (5น.)','q.all':'ทั้งหมด','loading':'กำลังรวมข้อมูลสองชุด…',
+  'tab.ov':'สรุปรวม','tab.q1':'สูญเสียการเดินเครื่อง','tab.q2':'ซ่อม↔ของเสีย','tab.q3':'สูญเสียรวมต่อเครื่อง','tab.q4':'ลำดับ TBM','tab.q5':'ผลการซ่อม','tab.q6':'เมทริกซ์ปรับปรุง',
+  'ov.combo':'เครื่องจักรที่สูญเสียรวมสูงสุด','ov.comboD':'OEE ต่ำและซ่อมมาก = สำคัญที่สุด','ov.trend':'OEE เทียบ Downtime รายเดือน','ov.trendD':'Downtime เพิ่ม OEE ลดลง (สัมพันธ์ผกผัน)',
+  'q1.ins':'แยกว่าการเดินเครื่อง(A)ที่ลดลงมาจาก Downtime ซ่อมแม่พิมพ์เท่าใด','q1.chart':'การเดินเครื่อง เทียบ Downtime ซ่อม','q1.chartD':'แท่ง=Downtime(นาที), เส้น=A(%)','q1.tbl':'สัดส่วน Downtime กัดกินการเดินเครื่อง','q1.tblD':'สัดส่วนเวลาแผนที่สูญเสียจากการซ่อม',
+  'q2.ins':'เชื่อมโยงว่าเครื่องที่ซ่อมมากมีของเสีย(PPM)สูงหรือไม่','q2.scatter':'จำนวนซ่อม เทียบ ของเสีย','q2.scatterD':'เอียงขวาบน = "เสีย→ของเสีย"','q2.trend':'ซ่อมคอร์พิน เทียบ ของเสีย รายเดือน','q2.trendD':'ช่วงซ่อมพุ่งกับของเสียพุ่งตรงกันไหม','q2.tbl':'เครื่องซ่อมมาก+ของเสียมาก','q2.tblD':'ทั้งคู่สูง = สงสัยแม่พิมพ์-คุณภาพเชื่อมโยง',
+  'q3.ins':'สูญเสียจริง = สูญเสีย OEE + ค่าซ่อม + Downtime','q3.tbl':'อันดับสูญเสียรวมต่อเครื่อง','q3.tblD':'รวมสัดส่วนสูญเสีย OEE·ค่าซ่อม·Downtime',
+  'q4.ins':'ลำดับแม่พิมพ์กับ OEE ตรงกัน=สำคัญสุด ต่างกัน=สอบทาน','q4.tbl':'ตารางไขว้ลำดับความสำคัญ','q4.tblD':'สองลำดับแย่ทั้งคู่ = ปรับปรุงทันที',
+  'q5.ins':'เดือนที่ซ่อมมากขึ้น คุณภาพ(Q)ดีขึ้นจริงหรือไม่','q5.chart':'ปริมาณซ่อม เทียบ คุณภาพ(Q) รายเดือน','q5.chartD':'แท่ง=จำนวนซ่อม, เส้น=Q(%)',
+  'q6.ins':'วางแต่ละเครื่องในเมทริกซ์ ซ่อม(X) × ของเสีย(Y)','q6.chart':'เมทริกซ์ 4 ช่องต่อเครื่อง','q6.chartD':'แนวนอน=ซ่อม, แนวตั้ง=PPM, ขนาดวง=ค่าซ่อม','q6.l1':'① ปรับปรุงทันที','q6.l2':'② มาตรฐานการซ่อม','q6.l3':'③ เสถียร','q6.l4':'④ ปรับกระบวนการ',
+  'kpi.eq':'จำนวนเครื่อง','kpi.repair':'ซ่อมทั้งหมด','kpi.dt':'Downtime รวม','kpi.cost':'ค่าซ่อมรวม','kpi.a':'A เฉลี่ย','kpi.q':'Q เฉลี่ย','u.eq':'เครื่อง','u.cnt':'ครั้ง','u.hr':'ชม.',
+  'noOEE':'การวิเคราะห์นี้ต้องใช้ข้อมูล OEE เผยแพร่ชีต OEE เป็น CSV เพื่อเปิดใช้','noMerge':'ไม่มีเครื่องที่รวมข้อมูลได้'}
+};
+let LANG='ko';
+function T(k){return (I18N[LANG][k]!==undefined)?I18N[LANG][k]:(I18N.ko[k]||k);}
+function setLang(l){LANG=l;document.getElementById('lk').classList.toggle('on',l==='ko');document.getElementById('lt').classList.toggle('on',l==='th');
+  document.documentElement.lang=l;
+  document.querySelectorAll('[data-i18n]').forEach(el=>{const k=el.getAttribute('data-i18n');if(I18N[l][k]!==undefined)el.textContent=I18N[l][k];});
+  document.getElementById('autobtn').textContent=autoTimer?T('btn.autoOn'):T('btn.autoOff');
+  if(DATA)rebuild(); // 동적 텍스트 갱신
+}
+
+const F=n=>Number(n).toLocaleString();
+const FK=n=>Math.abs(n)>=1000?(n/1000).toFixed(1)+'k':F(Math.round(n));
+const AC='#00d3a7',AC2='#3fb7ff',WARN='#ffb02e',BAD='#ff5d5d',PUR='#a78bfa',GRID='#232a36',SUB='#8b98a9';
+Chart.defaults.color=SUB;Chart.defaults.font.family="'SF Mono',monospace";Chart.defaults.font.size=11;Chart.defaults.plugins.legend.labels.boxWidth=10;
+const gridOpt={grid:{color:GRID},border:{color:GRID}},noGrid={grid:{display:false}};
+let CHARTS={};
+function mk(id,cfg){if(CHARTS[id])CHARTS[id].destroy();const el=document.getElementById(id);if(!el)return;CHARTS[id]=new Chart(el,cfg);}
+function num(v){if(v==null)return NaN;const s=(''+v).replace(/[,$%\s]/g,'');const n=parseFloat(s);return isNaN(n)?NaN:n;}
+function normDC(s){s=(''+s).trim().toUpperCase().replace(/\s+/g,'');const m=s.match(/DC\s*0*(\d+)/i);return m?('DC'+m[1]):s;}
+function setStatus(t,c){const e=document.getElementById('status');e.textContent=t;e.className='status '+(c||'');}
+function badge(id,ok,txt){const e=document.getElementById(id);e.className='srcbadge '+(ok?'on':'off');e.textContent=(ok?'● ':'○ ')+txt;}
+
+let MOLD_RAW=[],A_RAW=[],Q_RAW=[],autoTimer=null,RANGE={from:null,to:null},DATA=null,OEE_OK=false;
+
+async function loadAll(){
+  document.getElementById('reload').disabled=true;setStatus('불러오는 중…','load');
+  let mOk=false,aOk=false,qOk=false;
+  try{const t=await(await fetch(MOLD_CSV+'&t='+Date.now())).text();MOLD_RAW=Papa.parse(t,{header:true,skipEmptyLines:true}).data.filter(r=>r.Issue_no&&r.Issue_no.trim());mOk=MOLD_RAW.length>0;}catch(e){console.error('mold',e);}
+  try{const t=await(await fetch(A_URL+'&t='+Date.now(),{cache:'no-store'})).text();A_RAW=Papa.parse(t,{header:true,skipEmptyLines:true}).data.filter(r=>r['설비명']&&(''+r['설비명']).trim());aOk=A_RAW.length>0;}catch(e){console.error('A',e);}
+  try{const t=await(await fetch(Q_URL+'&t='+Date.now(),{cache:'no-store'})).text();Q_RAW=Papa.parse(t,{header:true,skipEmptyLines:true}).data.filter(r=>r['설비명']&&(''+r['설비명']).trim());qOk=Q_RAW.length>0;}catch(e){console.error('Q',e);}
+  badge('src-mold',mOk,'MOLD '+(mOk?MOLD_RAW.length:'✕'));
+  badge('src-a',aOk,'A '+(aOk?A_RAW.length:'✕'));
+  badge('src-q',qOk,'Q '+(qOk?Q_RAW.length:'✕'));
+  OEE_OK=aOk||qOk;
+  if(!mOk){setStatus('금형 로드 실패','err');document.getElementById('loading').innerHTML='<div style="color:var(--bad)">금형 데이터 로드 실패</div>';document.getElementById('reload').disabled=false;return;}
+  initRange();
+  rebuild();
+  document.getElementById('loading').style.display='none';document.getElementById('app').style.display='block';
+  setStatus('병합완료 '+new Date().toLocaleTimeString('ko-KR')+(OEE_OK?'':' (OEE없음)'),OEE_OK?'ok':'load');
+  document.getElementById('reload').disabled=false;
+}
+function toggleAuto(){const b=document.getElementById('autobtn');if(autoTimer){clearInterval(autoTimer);autoTimer=null;b.textContent=T('btn.autoOff');b.classList.add('ghost');}else{autoTimer=setInterval(loadAll,3e5);b.textContent=T('btn.autoOn');b.classList.remove('ghost');}}
+
+// 기간
+function allDates(){const ds=[];MOLD_RAW.forEach(r=>{const d=(r.Request_Date||'').trim();if(/^\d{4}-\d{2}-\d{2}$/.test(d))ds.push(d);});return ds.sort();}
+function initRange(){const ds=allDates();if(!ds.length)return;const mn=ds[0],mx=ds[ds.length-1];const df=document.getElementById('d-from'),dt=document.getElementById('d-to');df.min=mn;df.max=mx;dt.min=mn;dt.max=mx;if(!RANGE.from||RANGE.from<mn)RANGE.from=mn;if(!RANGE.to||RANGE.to>mx)RANGE.to=mx;df.value=RANGE.from;dt.value=RANGE.to;}
+function applyRange(){RANGE.from=document.getElementById('d-from').value;RANGE.to=document.getElementById('d-to').value;if(RANGE.from>RANGE.to){const t=RANGE.from;RANGE.from=RANGE.to;RANGE.to=t;document.getElementById('d-from').value=RANGE.from;document.getElementById('d-to').value=RANGE.to;}rebuild();}
+function quickRange(m){const ds=allDates();if(!ds.length)return;const mx=ds[ds.length-1];if(m===0){RANGE.from=ds[0];RANGE.to=mx;}else{const d=new Date(mx);d.setMonth(d.getMonth()-m);RANGE.from=d.toISOString().slice(0,10);if(RANGE.from<ds[0])RANGE.from=ds[0];RANGE.to=mx;}document.getElementById('d-from').value=RANGE.from;document.getElementById('d-to').value=RANGE.to;rebuild();}
+function inRange(d){if(!/^\d{4}-\d{2}-\d{2}$/.test(d))return false;if(RANGE.from&&d<RANGE.from)return false;if(RANGE.to&&d>RANGE.to)return false;return true;}
+function oeeDate(r){return (r['일자']||'').slice(0,10).replace(/\//g,'-');}
+
+function rebuild(){
+  const mold=MOLD_RAW.filter(r=>inRange((r.Request_Date||'').trim()));
+  const a=A_RAW.filter(r=>{const d=oeeDate(r);return d?inRange(d):true;});
+  const q=Q_RAW.filter(r=>{const d=oeeDate(r);return d?inRange(d):true;});
+  DATA=buildMerge(mold,a,q);
+  const n=mold.length;
+  setStatus('기간 '+n+'건'+(OEE_OK?'':' · OEE없음'),(RANGE.from===document.getElementById('d-from').min&&RANGE.to===document.getElementById('d-to').max)?'ok':'load');
+  renderAll();
+}
+
+function buildMerge(mold,aRows,qRows){
+  const M={};
+  mold.forEach(r=>{const dc=normDC(r.DC);if(!dc||dc==='NAN')return;if(!M[dc])M[dc]={dc,repairCnt:0,downtime:0,cost:0,byMonth:{}};
+    const t=num(r.Time_Min),c=num(r.Repair_USD);M[dc].repairCnt++;if(!isNaN(t)&&t>0)M[dc].downtime+=t;if(!isNaN(c))M[dc].cost+=c;
+    const ym=(r.YearMonth||'').trim()||(r.Request_Date||'').slice(0,7);if(ym){if(!M[dc].byMonth[ym])M[dc].byMonth[ym]={cnt:0,dt:0};M[dc].byMonth[ym].cnt++;M[dc].byMonth[ym].dt+=(isNaN(t)?0:Math.max(t,0));}});
+  const O={};
+  function ensure(dc){if(!O[dc])O[dc]={dc,plan:0,run:0,qtyTotal:0,qtyGood:0,defect:0,byMonth:{}};return O[dc];}
+  aRows.forEach(r=>{const dc=normDC(r['설비명']);if(!dc||dc==='NAN')return;const o=ensure(dc);const plan=num(r['계획시간_분'])||0,run=num(r['가동시간_분'])||0;o.plan+=plan;o.run+=run;
+    const ym=oeeDate(r).slice(0,7);if(ym){if(!o.byMonth[ym])o.byMonth[ym]={plan:0,run:0,qt:0,qg:0,df:0};o.byMonth[ym].plan+=plan;o.byMonth[ym].run+=run;}});
+  qRows.forEach(r=>{const dc=normDC(r['설비명']);if(!dc||dc==='NAN')return;const o=ensure(dc);const qt=num(r['Qty_Total'])||0,qg=num(r['Qty_Good'])||0,df=num(r['불량수량']);const dfv=isNaN(df)?Math.max(qt-qg,0):df;o.qtyTotal+=qt;o.qtyGood+=qg;o.defect+=dfv;
+    const ym=oeeDate(r).slice(0,7);if(ym){if(!o.byMonth[ym])o.byMonth[ym]={plan:0,run:0,qt:0,qg:0,df:0};o.byMonth[ym].qt+=qt;o.byMonth[ym].qg+=qg;o.byMonth[ym].df+=dfv;}});
+  Object.values(O).forEach(o=>{o.avail=o.plan>0?o.run/o.plan:NaN;o.quality=o.qtyTotal>0?o.qtyGood/o.qtyTotal:NaN;o.ppm=o.qtyTotal>0?o.defect/o.qtyTotal*1e6:NaN;});
+  const dcs=[...new Set([...Object.keys(M),...Object.keys(O)])];
+  return {M,O,merged:dcs.map(dc=>({dc,m:M[dc]||null,o:O[dc]||null}))};
+}
+
+function renderAll(){renderOv();renderQ1();renderQ2();renderQ3();renderQ4();renderQ5();renderQ6();}
+function avg(a){const v=a.filter(x=>!isNaN(x));return v.length?v.reduce((x,y)=>x+y,0)/v.length:NaN;}
+function median(a){const s=[...a].filter(x=>!isNaN(x)).sort((x,y)=>x-y);if(!s.length)return 0;const m=Math.floor(s.length/2);return s.length%2?s[m]:(s[m-1]+s[m])/2;}
+function pearson(x,y){const n=x.length;if(n<3)return NaN;const mx=x.reduce((a,b)=>a+b,0)/n,my=y.reduce((a,b)=>a+b,0)/n;let sxy=0,sx=0,sy=0;for(let i=0;i<n;i++){sxy+=(x[i]-mx)*(y[i]-my);sx+=(x[i]-mx)**2;sy+=(y[i]-my)**2;}return(sx&&sy)?sxy/Math.sqrt(sx*sy):NaN;}
+function noOEEmsg(){return '<div class="empty" style="color:var(--warn)">'+T('noOEE')+'</div>';}
+function clearC(ids){ids.forEach(id=>{if(CHARTS[id]){CHARTS[id].destroy();delete CHARTS[id];}});}
+
+function renderOv(){
+  const {M,O,merged}=DATA;const qOk=OEE_OK;
+  const totR=Object.values(M).reduce((a,b)=>a+b.repairCnt,0),totDT=Object.values(M).reduce((a,b)=>a+b.downtime,0),totC=Object.values(M).reduce((a,b)=>a+b.cost,0);
+  const aA=avg(Object.values(O).map(o=>o.avail)),aQ=avg(Object.values(O).map(o=>o.quality));
+  const kpis=[
+   {l:T('kpi.eq'),v:merged.length,u:T('u.eq'),c:''},
+   {l:T('kpi.repair'),v:F(totR),u:T('u.cnt'),c:'a2'},
+   {l:T('kpi.dt'),v:FK(totDT/60),u:T('u.hr'),c:'w'},
+   {l:T('kpi.cost'),v:'$'+FK(totC),u:'',c:'b'},
+   {l:T('kpi.a'),v:isNaN(aA)?'—':Math.round(aA*100),u:'%',c:'p'},
+   {l:T('kpi.q'),v:isNaN(aQ)?'—':Math.round(aQ*1000)/10,u:'%',c:''},
+  ];
+  document.getElementById('ov-kpi').innerHTML=kpis.map(k=>`<div class="kpi ${k.c}"><div class="lab">${k.l}</div><div class="val">${k.v}<span class="unit"> ${k.u}</span></div></div>`).join('');
+  const ins=document.getElementById('ov-insight');
+  const worst=merged.filter(x=>x.m&&x.o&&!isNaN(x.o.avail)).map(x=>({dc:x.dc,s:x.m.repairCnt*(1-x.o.avail)})).sort((a,b)=>b.s-a.s)[0];
+  if(LANG==='th'){ins.innerHTML=`<div class="h">การวินิจฉัยรวม</div>รวมข้อมูลการผลิต(OEE)กับการซ่อม(แม่พิมพ์)ตามเครื่องจักร(DC) รวม <b>${F(totR)}</b> ครั้ง · <b>${FK(totDT/60)}</b> ชม. · <b>$${F(Math.round(totC))}</b>${qOk&&!isNaN(aA)?` · A เฉลี่ย <b>${Math.round(aA*100)}%</b> · Q <b>${isNaN(aQ)?'—':Math.round(aQ*1000)/10}%</b>`:''}.${worst?` ปัจจุบัน <b>${worst.dc}</b> สูญเสียรวมสูงสุด.`:''}`;}
+  else{ins.innerHTML=`<div class="h">통합 진단 · INTEGRATED</div>생산(OEE)과 정비(금형)를 설비(DC) 단위로 병합. 총 <b>${F(totR)}건</b>·<b>${FK(totDT/60)}시간</b>·<b>$${F(Math.round(totC))}</b>${qOk&&!isNaN(aA)?`, 평균 가동률 <b>${Math.round(aA*100)}%</b>·품질 <b>${isNaN(aQ)?'—':Math.round(aQ*1000)/10}%</b>`:' (OEE 미연결)'}.${worst?` 현재 <b>${worst.dc}</b>가 결합 손실 1위.`:''}`;}
+  const rows=merged.filter(x=>x.m).map(x=>({dc:x.dc,repair:x.m.repairCnt,a:x.o?x.o.avail:NaN})).sort((a,b)=>b.repair-a.repair).slice(0,12);
+  mk('c-ovcombo',{data:{labels:rows.map(r=>r.dc),datasets:[{type:'bar',label:T('kpi.repair'),data:rows.map(r=>r.repair),backgroundColor:rows.map(r=>(!isNaN(r.a)&&r.a<0.8)?BAD+'cc':AC+'cc'),yAxisID:'y',borderRadius:3},...(qOk?[{type:'line',label:'A(%)',data:rows.map(r=>isNaN(r.a)?null:Math.round(r.a*100)),borderColor:AC2,yAxisID:'y1',tension:.3,pointRadius:2,spanGaps:true}]:[])]},options:{maintainAspectRatio:false,scales:{x:noGrid,y:{...gridOpt},y1:{...noGrid,position:'right',min:0,max:100,display:qOk}}}});
+  const mM={},oM={};Object.values(M).forEach(m=>Object.entries(m.byMonth).forEach(([ym,v])=>{mM[ym]=(mM[ym]||0)+v.dt;}));
+  Object.values(O).forEach(o=>Object.entries(o.byMonth).forEach(([ym,v])=>{if(!oM[ym])oM[ym]={plan:0,run:0,qt:0,qg:0};oM[ym].plan+=v.plan;oM[ym].run+=v.run;oM[ym].qt+=v.qt;oM[ym].qg+=v.qg;}));
+  const months=[...new Set([...Object.keys(mM),...Object.keys(oM)])].sort();
+  mk('c-ovtrend',{data:{labels:months.map(m=>m.slice(2)),datasets:[{type:'bar',label:T('kpi.dt')+'(h)',data:months.map(m=>Math.round((mM[m]||0)/60)),backgroundColor:WARN+'cc',yAxisID:'y',borderRadius:3},...(qOk?[{type:'line',label:'OEE(%)',data:months.map(m=>{const o=oM[m];if(!o||!o.plan)return null;const a=o.run/o.plan,q=o.qt?o.qg/o.qt:1;return Math.round(a*q*100);}),borderColor:AC,yAxisID:'y1',tension:.3,pointRadius:2,spanGaps:true}]:[])]},options:{maintainAspectRatio:false,scales:{x:noGrid,y:{...gridOpt},y1:{...noGrid,position:'right',min:0,max:100,display:qOk}}}});
+}
+
+function renderQ1(){
+  const {merged}=DATA;
+  const rows=merged.filter(x=>x.m).map(x=>({dc:x.dc,dt:x.m.downtime,a:x.o?x.o.avail:NaN})).sort((a,b)=>b.dt-a.dt).slice(0,15);
+  mk('c-q1',{data:{labels:rows.map(r=>r.dc),datasets:[{type:'bar',label:T('kpi.dt')+'(min)',data:rows.map(r=>Math.round(r.dt)),backgroundColor:WARN+'cc',yAxisID:'y',borderRadius:3},{type:'line',label:'A(%)',data:rows.map(r=>isNaN(r.a)?null:Math.round(r.a*100)),borderColor:AC2,yAxisID:'y1',tension:.3,pointRadius:3,spanGaps:true}]},options:{maintainAspectRatio:false,scales:{x:noGrid,y:{...gridOpt},y1:{...noGrid,position:'right',min:0,max:100}}}});
+  const t=merged.filter(x=>x.m&&x.o&&x.o.plan>0).map(x=>({dc:x.dc,dt:x.m.downtime,plan:x.o.plan,a:x.o.avail,share:x.m.downtime/x.o.plan})).sort((a,b)=>b.share-a.share).slice(0,15);
+  if(!t.length){document.getElementById('t-q1').innerHTML=noOEEmsg();return;}
+  const mx=Math.max(...t.map(r=>r.share));
+  document.getElementById('t-q1').innerHTML='<table><thead><tr><th>DC</th><th class="num">Downtime(min)</th><th class="num">Plan(min)</th><th class="num">Share</th><th class="num">A</th></tr></thead><tbody>'+t.map(r=>`<tr><td class="bar-cell"><div class="bar" style="width:${r.share/mx*100}%"></div><span>${r.dc}</span></td><td class="num">${F(Math.round(r.dt))}</td><td class="num">${F(Math.round(r.plan))}</td><td class="num"><span class="chip ${r.share>0.1?'hi':(r.share>0.05?'mid':'lo')}">${(r.share*100).toFixed(1)}%</span></td><td class="num">${Math.round(r.a*100)}%</td></tr>`).join('')+'</tbody></table>';
+}
+
+function renderQ2(){
+  const {O,merged}=DATA;const qOk=Object.values(O).some(o=>!isNaN(o.ppm));
+  if(!qOk){clearC(['c-q2scatter','c-q2trend']);document.getElementById('t-q2').innerHTML=noOEEmsg();return;}
+  const pts=merged.filter(x=>x.m&&x.o&&!isNaN(x.o.ppm)).map(x=>({dc:x.dc,x:x.m.repairCnt,y:Math.round(x.o.ppm),cost:x.m.cost}));
+  mk('c-q2scatter',{type:'scatter',data:{datasets:[{label:'DC',data:pts.map(p=>({x:p.x,y:p.y,dc:p.dc})),backgroundColor:AC2+'cc',pointRadius:6,pointHoverRadius:9}]},options:{maintainAspectRatio:false,plugins:{tooltip:{callbacks:{label:c=>c.raw.dc+': '+c.raw.x+' / '+F(c.raw.y)+'PPM'}}},scales:{x:{...gridOpt,title:{display:true,text:T('kpi.repair')}},y:{...gridOpt,title:{display:true,text:'PPM'}}}}});
+  const coreM={},defM={};MOLD_RAW.filter(r=>inRange((r.Request_Date||'').trim())).forEach(r=>{const ym=(r.YearMonth||'').trim()||(r.Request_Date||'').slice(0,7);if(ym&&/core|코어/i.test(r.Repair_type||''))coreM[ym]=(coreM[ym]||0)+1;});
+  Object.values(O).forEach(o=>Object.entries(o.byMonth).forEach(([ym,v])=>{if(!defM[ym])defM[ym]={df:0,qt:0};defM[ym].df+=v.df;defM[ym].qt+=v.qt;}));
+  const months=[...new Set([...Object.keys(coreM),...Object.keys(defM)])].sort();
+  mk('c-q2trend',{data:{labels:months.map(m=>m.slice(2)),datasets:[{type:'bar',label:'Core Pin',data:months.map(m=>coreM[m]||0),backgroundColor:BAD+'cc',yAxisID:'y',borderRadius:3},{type:'line',label:'PPM',data:months.map(m=>{const d=defM[m];return d&&d.qt?Math.round(d.df/d.qt*1e6):null;}),borderColor:WARN,yAxisID:'y1',tension:.3,pointRadius:2,spanGaps:true}]},options:{maintainAspectRatio:false,scales:{x:noGrid,y:{...gridOpt},y1:{...noGrid,position:'right'}}}});
+  const rmax=Math.max(...pts.map(p=>p.x)),pmax=Math.max(...pts.map(p=>p.y));
+  const both=pts.filter(p=>p.x>=rmax*0.4&&p.y>=pmax*0.4).sort((a,b)=>(b.x/rmax+b.y/pmax)-(a.x/rmax+a.y/pmax));
+  document.getElementById('t-q2').innerHTML=both.length?('<table><thead><tr><th>DC</th><th class="num">'+T('kpi.repair')+'</th><th class="num">PPM</th><th class="num">$</th><th></th></tr></thead><tbody>'+both.map(p=>`<tr><td><b>${p.dc}</b></td><td class="num">${F(p.x)}</td><td class="num">${F(p.y)}</td><td class="num">$${F(Math.round(p.cost))}</td><td><span class="chip hi">${LANG==='th'?'สงสัย':'연쇄의심'}</span></td></tr>`).join('')+'</tbody></table>'):'<div class="empty">'+(LANG==='th'?'ไม่มีเครื่องซ่อม+ของเสียสูงพร้อมกัน':'수리·불량 동반 설비 없음')+'</div>';
+}
+
+function renderQ3(){
+  const {merged}=DATA;
+  const rows=merged.filter(x=>x.m).map(x=>{const oeeLoss=(x.o&&!isNaN(x.o.avail)&&!isNaN(x.o.quality))?(1-x.o.avail*x.o.quality):NaN;return {dc:x.dc,cost:x.m.cost,dt:x.m.downtime,oeeLoss};});
+  const maxC=Math.max(...rows.map(r=>r.cost),1),maxD=Math.max(...rows.map(r=>r.dt),1),maxO=Math.max(...rows.map(r=>isNaN(r.oeeLoss)?0:r.oeeLoss),0.0001);
+  rows.forEach(r=>{r.idx=(r.cost/maxC)*0.4+(r.dt/maxD)*0.3+((isNaN(r.oeeLoss)?0:r.oeeLoss)/maxO)*0.3;});
+  rows.sort((a,b)=>b.idx-a.idx);const top=rows.slice(0,15),mx=Math.max(...top.map(r=>r.idx));
+  document.getElementById('t-q3').innerHTML='<table><thead><tr><th>#</th><th>DC</th><th class="num">$</th><th class="num">Downtime(min)</th><th class="num">OEE Loss</th><th class="num">'+(LANG==='th'?'ดัชนีรวม':'통합지수')+'</th></tr></thead><tbody>'+top.map((r,i)=>`<tr><td class="rank">${i+1}</td><td class="bar-cell"><div class="bar" style="width:${r.idx/mx*100}%"></div><span>${r.dc}</span></td><td class="num">$${F(Math.round(r.cost))}</td><td class="num">${F(Math.round(r.dt))}</td><td class="num">${isNaN(r.oeeLoss)?'—':(r.oeeLoss*100).toFixed(1)+'%'}</td><td class="num"><b style="color:${i<3?'var(--bad)':'var(--ink)'}">${(r.idx*100).toFixed(0)}</b></td></tr>`).join('')+'</tbody></table>';
+}
+
+function renderQ4(){
+  const {merged}=DATA;const qOk=Object.values(DATA.O).some(o=>!isNaN(o.avail));
+  const rows=merged.filter(x=>x.m);
+  const byR=[...rows].sort((a,b)=>b.m.repairCnt-a.m.repairCnt);const rRank={};byR.forEach((x,i)=>rRank[x.dc]=i+1);
+  let oRank={};if(qOk){const byO=[...rows].filter(x=>x.o&&!isNaN(x.o.avail)).map(x=>({dc:x.dc,oee:x.o.avail*(isNaN(x.o.quality)?1:x.o.quality)})).sort((a,b)=>a.oee-b.oee);byO.forEach((x,i)=>oRank[x.dc]=i+1);}
+  const th=LANG==='th';
+  const t=rows.map(x=>({dc:x.dc,rr:rRank[x.dc],orr:qOk?(oRank[x.dc]||null):null,repair:x.m.repairCnt,oee:x.o?(x.o.avail*(isNaN(x.o.quality)?1:x.o.quality)):NaN})).filter(x=>x.rr<=15||(x.orr&&x.orr<=15)).map(x=>{let v;if(qOk&&x.orr){if(x.rr<=8&&x.orr<=8)v='<span class="chip hi">'+(th?'สำคัญสุด':'최우선')+'</span>';else if(x.rr<=8)v='<span class="chip mid">'+(th?'ซ่อมมาก':'수리多')+'</span>';else if(x.orr<=8)v='<span class="chip q">'+(th?'OEEแย่':'OEE나쁨')+'</span>';else v='<span class="chip lo">'+(th?'เฝ้าดู':'관찰')+'</span>';}else v='<span class="chip lo">'+(th?'ตามซ่อม':'수리기준')+'</span>';return {...x,v};}).sort((a,b)=>(a.rr+(a.orr||99))-(b.rr+(b.orr||99))).slice(0,15);
+  document.getElementById('t-q4').innerHTML='<table><thead><tr><th>DC</th><th class="num">'+(th?'ลำดับซ่อม':'수리순위')+'</th><th class="num">'+T('kpi.repair')+'</th>'+(qOk?'<th class="num">OEE '+(th?'ลำดับ':'순위')+'</th><th class="num">OEE</th>':'')+'<th>'+(th?'ผลไขว้':'교차판정')+'</th></tr></thead><tbody>'+t.map(x=>`<tr><td><b>${x.dc}</b></td><td class="num">#${x.rr}</td><td class="num">${F(x.repair)}</td>${qOk?`<td class="num">${x.orr?'#'+x.orr:'—'}</td><td class="num">${isNaN(x.oee)?'—':Math.round(x.oee*100)+'%'}</td>`:''}<td>${x.v}</td></tr>`).join('')+'</tbody></table>';
+}
+
+function renderQ5(){
+  const {M,O}=DATA;const qOk=Object.values(O).some(o=>o.qtyTotal>0);
+  if(!qOk){clearC(['c-q5']);document.getElementById('q5-note').innerHTML=noOEEmsg();return;}
+  const rM={};Object.values(M).forEach(m=>Object.entries(m.byMonth).forEach(([ym,v])=>{rM[ym]=(rM[ym]||0)+v.cnt;}));
+  const qM={};Object.values(O).forEach(o=>Object.entries(o.byMonth).forEach(([ym,v])=>{if(!qM[ym])qM[ym]={qt:0,qg:0};qM[ym].qt+=v.qt;qM[ym].qg+=v.qg;}));
+  const months=[...new Set([...Object.keys(rM),...Object.keys(qM)])].sort();
+  mk('c-q5',{data:{labels:months.map(m=>m.slice(2)),datasets:[{type:'bar',label:T('kpi.repair'),data:months.map(m=>rM[m]||0),backgroundColor:AC+'cc',yAxisID:'y',borderRadius:3},{type:'line',label:'Q(%)',data:months.map(m=>{const q=qM[m];return q&&q.qt?Math.round(q.qg/q.qt*1000)/10:null;}),borderColor:AC2,yAxisID:'y1',tension:.3,pointRadius:3,spanGaps:true}]},options:{maintainAspectRatio:false,scales:{x:noGrid,y:{...gridOpt},y1:{...noGrid,position:'right'}}}});
+  const pair=months.map(m=>({r:rM[m]||0,q:(qM[m]&&qM[m].qt)?qM[m].qg/qM[m].qt:null})).filter(p=>p.q!==null);
+  const corr=pearson(pair.map(p=>p.r),pair.map(p=>p.q));const th=LANG==='th';let msg;
+  if(isNaN(corr))msg=th?'ข้อมูลไม่พอคำนวณสหสัมพันธ์':'상관 계산 데이터 부족';
+  else if(corr>0.3)msg=(th?`สหสัมพันธ์ <b style="color:var(--accent)">+${corr.toFixed(2)}</b> — เดือนที่ซ่อมมากคุณภาพดีขึ้น (สัมพันธ์บวก)`:`상관계수 <b style="color:var(--accent)">+${corr.toFixed(2)}</b> — 정비 늘린 달 품질 개선 (양의 관계)`);
+  else if(corr<-0.3)msg=(th?`สหสัมพันธ์ <b style="color:var(--bad)">${corr.toFixed(2)}</b> — ซ่อมมากแต่คุณภาพไม่ขึ้น ควรทบทวนวิธีซ่อม`:`상관계수 <b style="color:var(--bad)">${corr.toFixed(2)}</b> — 정비 늘어도 품질 정체, 방향 재검토`);
+  else msg=(th?`สหสัมพันธ์ <b>${corr.toFixed(2)}</b> — ไม่มีความสัมพันธ์ชัดเจน`:`상관계수 <b>${corr.toFixed(2)}</b> — 뚜렷한 관계 없음`);
+  document.getElementById('q5-note').innerHTML=msg;
+}
+
+function renderQ6(){
+  const {merged}=DATA;const el=document.getElementById('quad');
+  const pts=merged.filter(x=>x.m&&x.o&&!isNaN(x.o.ppm)).map(x=>({dc:x.dc,x:x.m.repairCnt,y:x.o.ppm,cost:x.m.cost}));
+  if(!pts.length){el.innerHTML='<div class="empty">'+(OEE_OK?T('noMerge'):T('noOEE'))+'</div>';return;}
+  const xmax=Math.max(...pts.map(p=>p.x))*1.1,ymax=Math.max(...pts.map(p=>p.y))*1.1;
+  const xmid=median(pts.map(p=>p.x)),ymid=median(pts.map(p=>p.y)),cmax=Math.max(...pts.map(p=>p.cost),1);const th=LANG==='th';
+  let h='<div class="midline" style="left:'+(xmid/xmax*100)+'%;top:0;bottom:0;width:1px"></div><div class="midline" style="top:'+(100-ymid/ymax*100)+'%;left:0;right:0;height:1px"></div>';
+  h+='<div class="qlabel" style="right:8px;top:6px;color:var(--bad)">'+(th?'①ทันที':'①즉시')+'</div><div class="qlabel" style="right:8px;bottom:6px;color:var(--warn)">'+(th?'②มาตรฐาน':'②표준화')+'</div><div class="qlabel" style="left:8px;top:6px;color:var(--accent2)">'+(th?'④กระบวนการ':'④공정')+'</div><div class="qlabel" style="left:8px;bottom:6px;color:var(--accent)">'+(th?'③เสถียร':'③안정')+'</div>';
+  h+='<div class="axis-x">'+T('kpi.repair')+' →</div><div class="axis-y">PPM →</div>';
+  pts.forEach(p=>{const left=p.x/xmax*100,top=100-p.y/ymax*100,r=6+Math.sqrt(p.cost/cmax)*16;let col=AC;const hx=p.x>=xmid,hy=p.y>=ymid;if(hx&&hy)col=BAD;else if(hx)col=WARN;else if(hy)col=AC2;h+=`<div class="dot" style="left:${left}%;top:${top}%;width:${r}px;height:${r}px;background:${col}bb" title="${p.dc}: ${p.x} / ${F(Math.round(p.y))}PPM / $${F(Math.round(p.cost))}"><span class="lb">${p.dc}</span></div>`;});
+  el.innerHTML=h;
+}
+
+document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{document.querySelectorAll('.tab').forEach(x=>x.classList.remove('on'));document.querySelectorAll('section').forEach(x=>x.classList.remove('on'));t.classList.add('on');document.getElementById(t.dataset.t).classList.add('on');});
+
+setLang('ko');
+loadAll();
+</script>
+</body>
+</html>
